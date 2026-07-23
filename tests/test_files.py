@@ -107,6 +107,54 @@ async def test_attach_file_to_deal_chains_upload_note_associate(server):
 
 
 @respx.mock
+async def test_get_file_returns_metadata(server):
+    respx.get(f"{BASE}/files/v3/files/42").mock(
+        return_value=httpx.Response(200, json={"id": "42", "name": "a.pdf"})
+    )
+    async with Client(server.mcp) as client:
+        res = await client.call_tool("hubspot_get_file", {"file_id": "42"})
+    assert res.data["id"] == "42"
+
+
+@respx.mock
+async def test_download_file_signs_then_fetches_bytes(server):
+    meta = respx.get(f"{BASE}/files/v3/files/42").mock(
+        return_value=httpx.Response(
+            200, json={"id": "42", "name": "a.pdf", "extension": "pdf", "size": 3}
+        )
+    )
+    signed = respx.get(f"{BASE}/files/v3/files/42/signed-url").mock(
+        return_value=httpx.Response(200, json={"url": "https://cdn.example/a.pdf"})
+    )
+    # The CDN fetch must go out WITHOUT the HubSpot bearer.
+    cdn = respx.get("https://cdn.example/a.pdf").mock(
+        return_value=httpx.Response(200, content=b"PDFBYTES")
+    )
+    async with Client(server.mcp) as client:
+        res = await client.call_tool("hubspot_download_file", {"file_id": "42"})
+
+    assert meta.called and signed.called and cdn.called
+    assert "authorization" not in {k.lower() for k in cdn.calls.last.request.headers}
+    data = res.data
+    assert data["name"] == "a.pdf" and data["extension"] == "pdf"
+    assert base64.b64decode(data["data_base64"]) == b"PDFBYTES"
+
+
+@respx.mock
+async def test_download_file_errors_without_signed_url(server):
+    respx.get(f"{BASE}/files/v3/files/42").mock(
+        return_value=httpx.Response(200, json={"id": "42"})
+    )
+    respx.get(f"{BASE}/files/v3/files/42/signed-url").mock(
+        return_value=httpx.Response(200, json={})  # no "url"
+    )
+    async with Client(server.mcp) as client:
+        with pytest.raises(Exception) as exc:
+            await client.call_tool("hubspot_download_file", {"file_id": "42"})
+    assert "signed URL" in str(exc.value)
+
+
+@respx.mock
 async def test_create_note_sets_attachment_ids(server):
     note = respx.post(f"{BASE}/crm/v3/objects/notes").mock(
         return_value=httpx.Response(201, json={"id": "1"})

@@ -15,6 +15,8 @@ import mimetypes
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
+
 from ._base import ClientGetter, ToolError, api, upload
 
 # HubSpot file visibility values accepted by the Files API ``options.access``.
@@ -43,6 +45,21 @@ def _check_access(access: str) -> None:
         raise ToolError(
             f"access must be one of {sorted(_ACCESS_VALUES)}, got {access!r}"
         )
+
+
+async def _fetch_signed_url(get_client: ClientGetter, file_id: str) -> str:
+    """Ask HubSpot for a short-lived signed URL to download a file's bytes.
+
+    Private files aren't served from their plain ``url`` (that redirects to a
+    login); the Files API mints a temporary signed URL instead.
+    """
+    resp = await api(
+        get_client, "GET", f"/files/v3/files/{file_id}/signed-url"
+    )
+    url = resp.get("url") if isinstance(resp, dict) else None
+    if not url:
+        raise ToolError(f"HubSpot returned no signed URL for file {file_id}")
+    return url
 
 
 async def _do_upload(
@@ -140,3 +157,76 @@ def register(mcp, get_client: ClientGetter) -> None:
             f"/crm/v4/objects/notes/{note['id']}/associations/default/deals/{deal_id}",
         )
         return {"file": uploaded, "note": note}
+
+    @mcp.tool()
+    async def hubspot_get_file(file_id: str) -> dict[str, Any]:
+        """Get a file's metadata (name, extension, type, size, url).
+
+        The generic ``hubspot_get_object`` rejects file objects
+        ("FILE_MANAGER_FILE not supported"); use this to inspect a file you
+        found via a note's ``hs_attachment_ids``.
+
+        Args:
+            file_id: The HubSpot file ID.
+
+        Returns:
+            The file object.
+        """
+
+        return await api(get_client, "GET", f"/files/v3/files/{file_id}")
+
+    @mcp.tool()
+    async def hubspot_get_file_signed_url(file_id: str) -> dict[str, Any]:
+        """Get a short-lived signed URL to download a file.
+
+        Useful to hand a downloadable link to the user; the URL expires. For
+        the bytes directly, use ``hubspot_download_file``.
+
+        Args:
+            file_id: The HubSpot file ID.
+
+        Returns:
+            ``{"file_id", "url"}`` — the temporary signed download URL.
+        """
+
+        url = await _fetch_signed_url(get_client, file_id)
+        return {"file_id": file_id, "url": url}
+
+    @mcp.tool()
+    async def hubspot_download_file(file_id: str) -> dict[str, Any]:
+        """Download a file's bytes.
+
+        Fetches a signed URL and downloads the content, returning it as base64
+        (MCP results are JSON) — the read side of ``hubspot_upload_file``, and
+        what lets you actually open a note's attachment.
+
+        Args:
+            file_id: The HubSpot file ID (e.g. from a note's hs_attachment_ids).
+
+        Returns:
+            ``{"id", "name", "extension", "type", "size", "data_base64"}``.
+        """
+
+        meta = await api(get_client, "GET", f"/files/v3/files/{file_id}")
+        url = await _fetch_signed_url(get_client, file_id)
+        # The signed URL is pre-authenticated (and on a CDN host), so fetch it
+        # without the HubSpot bearer; follow the redirect to the storage blob.
+        try:
+            async with httpx.AsyncClient(
+                timeout=60.0, follow_redirects=True
+            ) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                raw = resp.content
+        except httpx.HTTPError as exc:
+            raise ToolError(f"downloading file {file_id} failed: {exc}") from exc
+
+        meta = meta if isinstance(meta, dict) else {}
+        return {
+            "id": file_id,
+            "name": meta.get("name"),
+            "extension": meta.get("extension"),
+            "type": meta.get("type"),
+            "size": meta.get("size"),
+            "data_base64": base64.b64encode(raw).decode(),
+        }

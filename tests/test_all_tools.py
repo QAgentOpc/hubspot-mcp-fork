@@ -150,6 +150,9 @@ CASES = [
     # ---- Files ----
     ("hubspot_upload_file", {"filename": "a.txt", "data_base64": "aGk="}, "POST", "/files/v3/files", None),
     ("hubspot_attach_file_to_deal", {"deal_id": "5", "filename": "a.txt", "data_base64": "aGk="}, "POST", "/crm/v3/objects/notes", None),
+    ("hubspot_get_file", {"file_id": "1"}, "GET", "/files/v3/files/1", None),
+    ("hubspot_get_file_signed_url", {"file_id": "1"}, "GET", "/files/v3/files/1/signed-url", None),
+    ("hubspot_download_file", {"file_id": "1"}, "GET", "/files/v3/files/1/signed-url", None),
     # ---- Account / schemas ----
     ("hubspot_get_account_details", {}, "GET", "/account-info/v3/details", None),
     ("hubspot_list_object_schemas", {}, "GET", "/crm-object-schemas/v3/schemas", None),
@@ -177,7 +180,7 @@ async def test_tool_hits_expected_endpoint(server, tool, args, method, path, bod
     route = respx.route().mock(
         return_value=httpx.Response(
             200,
-            json={"id": "1", "results": [], "paging": {}, "properties": {}, "inputs": []},
+            json={"id": "1", "results": [], "paging": {}, "properties": {}, "inputs": [], "url": "https://files.example/signed"},
         )
     )
     async with Client(server.mcp) as client:
