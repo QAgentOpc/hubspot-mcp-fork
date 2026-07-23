@@ -100,3 +100,46 @@ async def test_retries_on_429_then_succeeds():
 
     assert result == {"results": [{"id": "1"}]}
     assert route.call_count == 2
+
+
+@respx.mock
+async def test_upload_sends_multipart_and_bearer():
+    route = respx.post(f"{BASE}/files/v3/files").mock(
+        return_value=httpx.Response(201, json={"id": "9"})
+    )
+    client = make_client()
+    try:
+        result = await client.upload(
+            "/files/v3/files",
+            files={"file": ("a.bin", b"\x00\x01\x02", "application/octet-stream")},
+            data={"options": '{"access":"PRIVATE"}', "folderPath": "/"},
+        )
+    finally:
+        await client.aclose()
+
+    assert result == {"id": "9"}
+    req = route.calls.last.request
+    assert req.headers["content-type"].startswith("multipart/form-data; boundary=")
+    assert req.headers["Authorization"] == "Bearer tok"
+    assert b'filename="a.bin"' in req.content
+
+
+@respx.mock
+async def test_upload_retries_on_429():
+    route = respx.post(f"{BASE}/files/v3/files").mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "0"}, json={"message": "rate"}),
+            httpx.Response(201, json={"id": "9"}),
+        ]
+    )
+    client = make_client()
+    try:
+        result = await client.upload(
+            "/files/v3/files",
+            files={"file": ("a.bin", b"x", "application/octet-stream")},
+        )
+    finally:
+        await client.aclose()
+
+    assert result == {"id": "9"}
+    assert route.call_count == 2

@@ -147,6 +147,10 @@ CASES = [
     ("hubspot_get_flow_performance", {"flow_id": "fl1"}, "GET", "/automation/v4/flows/performance/fl1", None),
     ("hubspot_list_email_campaign_flows", {}, "GET", "/automation/v4/flows/email-campaigns", None),
     # ---- Account / schemas ----
+    # ---- Files ----
+    ("hubspot_upload_file", {"filename": "a.txt", "data_base64": "aGk="}, "POST", "/files/v3/files", None),
+    ("hubspot_attach_file_to_deal", {"deal_id": "5", "filename": "a.txt", "data_base64": "aGk="}, "POST", "/crm/v3/objects/notes", None),
+    # ---- Account / schemas ----
     ("hubspot_get_account_details", {}, "GET", "/account-info/v3/details", None),
     ("hubspot_list_object_schemas", {}, "GET", "/crm-object-schemas/v3/schemas", None),
     ("hubspot_get_object_schema", {"object_type": "contacts"}, "GET", "/crm-object-schemas/v3/schemas/contacts", None),
@@ -159,7 +163,9 @@ def test_every_registered_tool_has_a_case():
 
     import hubspot_mcp.server as srv
 
-    registered = {t.name for t in asyncio.get_event_loop().run_until_complete(srv.mcp.list_tools())}
+    # asyncio.get_event_loop() raises on 3.12+ when no loop is running; this is
+    # a sync test, so run the coroutine on a fresh loop.
+    registered = {t.name for t in asyncio.run(srv.mcp.list_tools())}
     covered = {c[0] for c in CASES}
     missing = registered - covered
     assert not missing, f"tools without an endpoint test: {sorted(missing)}"

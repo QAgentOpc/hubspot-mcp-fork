@@ -49,6 +49,7 @@ def register(mcp, get_client: ClientGetter) -> None:
         associations: list[dict[str, str]] | None = None,
         owner_id: str | None = None,
         timestamp: str | None = None,
+        attachment_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create a note, optionally linked to other records.
 
@@ -58,6 +59,8 @@ def register(mcp, get_client: ClientGetter) -> None:
                 {"to_object_type": "contacts", "to_object_id": "123"}.
             owner_id: Optional owner (hubspot_owner_id) for the note.
             timestamp: ISO-8601 time the note occurred. Defaults to now.
+            attachment_ids: Optional IDs of files (from hubspot_upload_file) to
+                attach to the note.
 
         Returns:
             The created note, plus the list of associations that were linked.
@@ -69,6 +72,8 @@ def register(mcp, get_client: ClientGetter) -> None:
         }
         if owner_id is not None:
             properties["hubspot_owner_id"] = owner_id
+        if attachment_ids:
+            properties["hs_attachment_ids"] = ";".join(str(a) for a in attachment_ids)
         note = await api(
             get_client, "POST", "/crm/v3/objects/notes", json={"properties": properties}
         )

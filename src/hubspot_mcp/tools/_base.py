@@ -29,3 +29,18 @@ async def api(
         return await get_client().request(method, path, params=params, json=json)
     except HubSpotError as exc:
         raise ToolError(exc.as_text()) from exc
+
+
+async def upload(
+    get_client: ClientGetter,
+    path: str,
+    *,
+    files: Mapping[str, Any],
+    data: Mapping[str, Any] | None = None,
+) -> Any:
+    """Upload a multipart body, converting transport errors into ``ToolError``."""
+
+    try:
+        return await get_client().upload(path, files=files, data=data)
+    except HubSpotError as exc:
+        raise ToolError(exc.as_text()) from exc

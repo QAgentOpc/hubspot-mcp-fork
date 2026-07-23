@@ -10,6 +10,7 @@ from . import (
     campaigns,
     email_send,
     engagements,
+    files,
     forms,
     lists,
     marketing_emails,
@@ -30,6 +31,7 @@ REGISTRARS = (
     owners,
     pipelines,
     engagements,
+    files,
     lists,
     # Marketing
     campaigns,

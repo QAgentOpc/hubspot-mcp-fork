@@ -47,13 +47,13 @@ class HubSpotClient:
         self._owns_client = client is None
         # No static Authorization header: the token is resolved per request so
         # that each authenticated user's HubSpot token is used (oauth mode).
+        # No default Content-Type either: httpx sets it from the body type per
+        # request (application/json for ``json=``, multipart for ``files=``); a
+        # static application/json default would mislabel file uploads.
         self._client = client or httpx.AsyncClient(
             base_url=self._settings.api_base_url,
             timeout=self._settings.timeout,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "hubspot-mcp/0.1.0",
-            },
+            headers={"User-Agent": "hubspot-mcp/0.1.0"},
         )
 
     async def aclose(self) -> None:
@@ -120,6 +120,59 @@ class HubSpotClient:
                     path,
                     params=clean_params,
                     json=json,
+                    headers=auth_header,
+                )
+            except httpx.RequestError as exc:  # network/timeout/DNS etc.
+                if attempt <= _MAX_RETRIES:
+                    await asyncio.sleep(_backoff_seconds(attempt))
+                    continue
+                raise HubSpotError(f"Request to HubSpot failed: {exc}") from exc
+
+            if response.status_code in _RETRYABLE_STATUS and attempt <= _MAX_RETRIES:
+                await asyncio.sleep(_retry_delay(response, attempt))
+                continue
+
+            if response.is_success:
+                return _decode(response)
+
+            raise _error_from_response(response)
+
+    async def upload(
+        self,
+        path: str,
+        *,
+        files: Mapping[str, Any],
+        data: Mapping[str, Any] | None = None,
+        token: str | None = None,
+    ) -> Any:
+        """POST a ``multipart/form-data`` body (file upload) and decode the JSON.
+
+        httpx derives the multipart ``Content-Type`` (with boundary) from
+        ``files``; the client carries no default Content-Type so this is not
+        overridden. File parts are passed as ``(filename, bytes, content_type)``
+        so a retry re-encodes from the same bytes rather than a spent stream.
+
+        Args:
+            path: API path beginning with ``/`` (e.g. ``/files/v3/files``).
+            files: Multipart file parts, e.g.
+                ``{"file": ("a.pdf", b"...", "application/pdf")}``.
+            data: Additional non-file form fields (string values).
+            token: Explicit bearer token; resolved from context if omitted.
+
+        Raises:
+            HubSpotError: on a non-success response or transport failure.
+        """
+
+        bearer = token or self._resolve_token()
+        auth_header = {"Authorization": f"Bearer {bearer}"}
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                response = await self._client.post(
+                    path,
+                    files=dict(files),
+                    data=dict(data or {}),
                     headers=auth_header,
                 )
             except httpx.RequestError as exc:  # network/timeout/DNS etc.
