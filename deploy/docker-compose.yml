@@ -1,0 +1,59 @@
+services:
+  hubspot-mcp:
+    # Full access for Fred (LibreChat + OpenCode). Reached by LibreChat as
+    # http://hubspot-mcp:8000/mcp over librechat_default; host-side via
+    # 127.0.0.1:5111.
+    image: hubspot-mcp:latest
+    build: ..
+    container_name: hubspot-mcp
+    env_file: .env
+    environment:
+      HUBSPOT_AUTH_MODE: token
+      HUBSPOT_TRANSPORT: http
+      HUBSPOT_HOST: 0.0.0.0
+      HUBSPOT_PORT: "8000"
+    ports:
+      - "127.0.0.1:5111:8000"
+    networks:
+      - librechat_default
+      - openclaw-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - ./hubspot_cli.py:/usr/local/bin/hubspot-cli:ro
+
+  hubspot-mcp-agents:
+    # Limited endpoint for agents: no delete/remove/unsubscribe, no email
+    # send/publish. Same image, same token; enforcement is the tool surface.
+    image: hubspot-mcp:latest
+    container_name: hubspot-mcp-agents
+    env_file: .env
+    environment:
+      HUBSPOT_AUTH_MODE: token
+      HUBSPOT_TRANSPORT: http
+      HUBSPOT_HOST: 0.0.0.0
+      HUBSPOT_PORT: "8000"
+      HUBSPOT_DISABLED_TOOLS: >-
+        hubspot_delete_object,hubspot_delete_association,hubspot_delete_campaign,hubspot_remove_campaign_asset,hubspot_delete_marketing_email,hubspot_publish_marketing_email,hubspot_unpublish_marketing_email,hubspot_send_transactional_email,hubspot_send_marketing_email,hubspot_delete_form,hubspot_delete_list,hubspot_remove_list_members,hubspot_unsubscribe
+    ports:
+      - "127.0.0.1:5112:8000"
+    networks:
+      - openclaw-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - ./hubspot_cli.py:/usr/local/bin/hubspot-cli:ro
+
+networks:
+  librechat_default:
+    external: true
+  openclaw-internal:
+    external: true
