@@ -142,11 +142,14 @@ def register(mcp, get_client: ClientGetter) -> None:
         _check_access(access)
         raw = _decode_b64(data_base64)
         uploaded = await _do_upload(get_client, filename, raw, folder_path, access)
+        uploaded_file_id = uploaded.get("id") if isinstance(uploaded, dict) else None
+        if not uploaded_file_id:
+            raise ToolError("file upload returned no id; cannot attach to note")
 
         properties: dict[str, Any] = {
             "hs_note_body": note_body or f"Attached file: {filename}",
             "hs_timestamp": timestamp or _now_iso(),
-            "hs_attachment_ids": str(uploaded["id"]),
+            "hs_attachment_ids": str(uploaded_file_id),
         }
         if owner_id is not None:
             properties["hubspot_owner_id"] = owner_id
@@ -219,15 +222,22 @@ def register(mcp, get_client: ClientGetter) -> None:
         url = await _fetch_signed_url(get_client, file_id)
         # The signed URL is pre-authenticated (and on a CDN host), so fetch it
         # without the HubSpot bearer; follow the redirect to the storage blob.
+        # trust_env=False keeps the signed URL from transiting a proxy.
         try:
             async with httpx.AsyncClient(
-                timeout=60.0, follow_redirects=True
+                timeout=60.0, follow_redirects=True, trust_env=False
             ) as client:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 raw = resp.content
+        except httpx.HTTPStatusError as exc:
+            raise ToolError(
+                f"downloading file {file_id} failed with HTTP {exc.response.status_code}"
+            ) from exc
         except httpx.HTTPError as exc:
-            raise ToolError(f"downloading file {file_id} failed: {exc}") from exc
+            raise ToolError(
+                f"downloading file {file_id} failed: {type(exc).__name__}"
+            ) from exc
 
         meta = meta if isinstance(meta, dict) else {}
         return {

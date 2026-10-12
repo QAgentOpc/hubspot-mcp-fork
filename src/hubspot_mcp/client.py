@@ -5,7 +5,8 @@ Wraps :mod:`httpx` with:
 * Bearer-token authentication from :class:`~hubspot_mcp.config.Settings`.
 * JSON encoding/decoding.
 * Automatic retry with backoff on rate limits (HTTP 429) and transient 5xx
-  errors, honouring HubSpot's ``Retry-After`` header when present.
+  errors, honouring HubSpot's ``Retry-After`` header when present
+  (JSON requests; uploads are single-attempt to avoid duplicate files).
 * A single :class:`HubSpotError` that carries the status code and the parsed
   error body, so tools can surface useful messages to the model.
 """
@@ -149,8 +150,10 @@ class HubSpotClient:
 
         httpx derives the multipart ``Content-Type`` (with boundary) from
         ``files``; the client carries no default Content-Type so this is not
-        overridden. File parts are passed as ``(filename, bytes, content_type)``
-        so a retry re-encodes from the same bytes rather than a spent stream.
+        overridden. Uploads are single-attempt: a retried multipart POST can
+        duplicate the file when the first attempt actually succeeded but the
+        response was lost, so neither transport errors nor retryable statuses
+        are retried here.
 
         Args:
             path: API path beginning with ``/`` (e.g. ``/files/v3/files``).
@@ -165,30 +168,20 @@ class HubSpotClient:
 
         bearer = token or self._resolve_token()
         auth_header = {"Authorization": f"Bearer {bearer}"}
-        attempt = 0
-        while True:
-            attempt += 1
-            try:
-                response = await self._client.post(
-                    path,
-                    files=dict(files),
-                    data=dict(data or {}),
-                    headers=auth_header,
-                )
-            except httpx.RequestError as exc:  # network/timeout/DNS etc.
-                if attempt <= _MAX_RETRIES:
-                    await asyncio.sleep(_backoff_seconds(attempt))
-                    continue
-                raise HubSpotError(f"Request to HubSpot failed: {exc}") from exc
+        try:
+            response = await self._client.post(
+                path,
+                files=dict(files),
+                data=dict(data or {}),
+                headers=auth_header,
+            )
+        except httpx.RequestError as exc:  # network/timeout/DNS etc.
+            raise HubSpotError(f"Request to HubSpot failed: {exc}") from exc
 
-            if response.status_code in _RETRYABLE_STATUS and attempt <= _MAX_RETRIES:
-                await asyncio.sleep(_retry_delay(response, attempt))
-                continue
+        if response.is_success:
+            return _decode(response)
 
-            if response.is_success:
-                return _decode(response)
-
-            raise _error_from_response(response)
+        raise _error_from_response(response)
 
 
 def _clean_params(params: Mapping[str, Any] | None) -> dict[str, Any] | None:

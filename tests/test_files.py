@@ -183,3 +183,38 @@ async def test_create_note_sets_attachment_ids(server):
 
     props = json.loads(note.calls.last.request.content)["properties"]
     assert props["hs_attachment_ids"] == "10;20"
+
+
+@respx.mock
+async def test_download_file_error_does_not_leak_signed_url(server):
+    signed_url = "https://cdn.example/secret/path/a.pdf?sig=abc123"
+    respx.get(f"{BASE}/files/v3/files/42").mock(
+        return_value=httpx.Response(200, json={"id": "42", "name": "a.pdf"})
+    )
+    respx.get(f"{BASE}/files/v3/files/42/signed-url").mock(
+        return_value=httpx.Response(200, json={"url": signed_url})
+    )
+    respx.get(signed_url).mock(return_value=httpx.Response(500))
+    async with Client(server.mcp) as client:
+        with pytest.raises(Exception) as exc:
+            await client.call_tool("hubspot_download_file", {"file_id": "42"})
+    assert "HTTP 500" in str(exc.value)
+    assert signed_url not in str(exc.value)  # the pre-authenticated URL stays out
+
+
+@respx.mock
+async def test_attach_file_to_deal_rejects_upload_without_id(server):
+    respx.post(f"{BASE}/files/v3/files").mock(
+        return_value=httpx.Response(201, json={"url": "https://f/42"})  # no "id"
+    )
+    note = respx.post(f"{BASE}/crm/v3/objects/notes").mock(
+        return_value=httpx.Response(201, json={"id": "1"})
+    )
+    async with Client(server.mcp) as client:
+        with pytest.raises(Exception) as exc:
+            await client.call_tool(
+                "hubspot_attach_file_to_deal",
+                {"deal_id": "5", "filename": "a.txt", "data_base64": _B64},
+            )
+    assert "no id" in str(exc.value)
+    assert not note.called  # guard fires before the note is created

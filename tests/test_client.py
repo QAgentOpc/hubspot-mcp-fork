@@ -125,21 +125,19 @@ async def test_upload_sends_multipart_and_bearer():
 
 
 @respx.mock
-async def test_upload_retries_on_429():
+async def test_upload_429_raises_and_posts_once():
     route = respx.post(f"{BASE}/files/v3/files").mock(
-        side_effect=[
-            httpx.Response(429, headers={"Retry-After": "0"}, json={"message": "rate"}),
-            httpx.Response(201, json={"id": "9"}),
-        ]
+        return_value=httpx.Response(429, headers={"Retry-After": "0"}, json={"message": "rate"})
     )
     client = make_client()
     try:
-        result = await client.upload(
-            "/files/v3/files",
-            files={"file": ("a.bin", b"x", "application/octet-stream")},
-        )
+        with pytest.raises(HubSpotError) as exc:
+            await client.upload(
+                "/files/v3/files",
+                files={"file": ("a.bin", b"x", "application/octet-stream")},
+            )
     finally:
         await client.aclose()
 
-    assert result == {"id": "9"}
-    assert route.call_count == 2
+    assert exc.value.status_code == 429
+    assert route.call_count == 1
