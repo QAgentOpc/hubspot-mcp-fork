@@ -45,6 +45,7 @@ DEFAULT_SCOPES = [
     "crm.objects.deals.write",
     "crm.objects.products.read",  # products / line items
     "crm.objects.products.write",
+    "files",  # file manager tools (combined read+write scope)
     # NB: custom objects (crm.objects.custom.*) require an Enterprise plan and are
     # intentionally omitted — requesting them on a non-Enterprise portal can make
     # HubSpot reject the whole authorization. The object-schema tools and custom

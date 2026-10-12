@@ -26,6 +26,7 @@ tickets, line items, products, quotes, engagements, and custom objects.
 | **Owners** | `hubspot_list_owners`, `hubspot_get_owner` |
 | **Pipelines** | `hubspot_list_pipelines`, `hubspot_get_pipeline`, `hubspot_list_pipeline_stages` |
 | **Engagements** | `hubspot_create_note`, `hubspot_create_task` |
+| **Files** | `hubspot_upload_file`, `hubspot_attach_file_to_deal`, `hubspot_get_file`, `hubspot_get_file_signed_url`, `hubspot_download_file` |
 | **Account / schemas** | `hubspot_get_account_details`, `hubspot_list_object_schemas`, `hubspot_get_object_schema` |
 
 ### Marketing
@@ -93,6 +94,7 @@ that the request omits, authorization fails with "provided scopes are missing".
 | `crm.objects.deals.read` / `.write` | deals |
 | `crm.objects.products.read` / `.write` | products / line items |
 | `tickets` | ticket records |
+| `files` | file upload / download / deal-attachment tools |
 | `crm.objects.owners.read` | owners tools |
 | `crm.schemas.contacts.read` | property / schema reads |
 | `crm.lists.read` / `.write` | lists tools |
