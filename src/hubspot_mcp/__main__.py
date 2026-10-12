@@ -3,7 +3,8 @@
 * ``oauth`` mode runs over HTTP (Streamable HTTP) so MCP clients can perform the
   browser-based OAuth handshake and connect remotely.
 * ``token`` mode runs over stdio, which is what local MCP clients expect when
-  launching the server as a subprocess.
+  launching the server as a subprocess; it can also serve HTTP by setting
+  ``HUBSPOT_TRANSPORT=http`` (e.g. inside a private docker network).
 """
 
 from __future__ import annotations
@@ -22,10 +23,15 @@ def main() -> None:
         print(f"hubspot-mcp: configuration error: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
 
-    if settings.auth_mode == "oauth":
+    use_http = settings.auth_mode == "oauth" or settings.transport == "http"
+    if use_http:
+        note = (
+            "OAuth proxy in front of HubSpot."
+            if settings.auth_mode == "oauth"
+            else "token mode; relying on network isolation for access control."
+        )
         print(
-            f"hubspot-mcp: serving over HTTP on {settings.host}:{settings.port} "
-            f"(public URL {settings.server_url}); OAuth proxy in front of HubSpot.",
+            f"hubspot-mcp: serving over HTTP on {settings.host}:{settings.port} ({note})",
             file=sys.stderr,
         )
         mcp.run(transport="http", host=settings.host, port=settings.port)

@@ -155,6 +155,22 @@ async def test_download_file_errors_without_signed_url(server):
 
 
 @respx.mock
+async def test_download_file_rejects_oversized_file(server):
+    respx.get(f"{BASE}/files/v3/files/42").mock(
+        return_value=httpx.Response(200, json={"id": "42", "size": 6291456})
+    )
+    signed = respx.get(f"{BASE}/files/v3/files/42/signed-url").mock(
+        return_value=httpx.Response(200, json={"url": "https://cdn.example/a.pdf"})
+    )
+    async with Client(server.mcp) as client:
+        with pytest.raises(Exception) as exc:
+            await client.call_tool("hubspot_download_file", {"file_id": "42"})
+    assert "5242880" in str(exc.value)  # the 5 MiB cap
+    assert "hubspot_get_file_signed_url" in str(exc.value)
+    assert not signed.called  # rejected before the signed-url request
+
+
+@respx.mock
 async def test_create_note_sets_attachment_ids(server):
     note = respx.post(f"{BASE}/crm/v3/objects/notes").mock(
         return_value=httpx.Response(201, json={"id": "1"})

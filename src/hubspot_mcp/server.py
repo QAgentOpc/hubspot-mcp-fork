@@ -48,7 +48,7 @@ def get_client() -> HubSpotClient:
     return _client
 
 
-register_all(mcp, get_client)
+register_all(mcp, get_client, disabled_tools=settings.disabled_tools)
 
 
 # Unauthenticated health endpoints for Kubernetes probes (HTTP/oauth mode).

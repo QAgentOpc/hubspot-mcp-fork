@@ -109,6 +109,10 @@ class Settings:
     forward_pkce: bool = False
     require_consent: bool = True
 
+    # deployment
+    transport: str = "stdio"  # "stdio" | "http"
+    disabled_tools: tuple[str, ...] = ()
+
 
 def _split_scopes(raw: str) -> list[str]:
     return [s for s in raw.replace(",", " ").split() if s]
@@ -169,6 +173,15 @@ def load_settings() -> Settings:
             f"HUBSPOT_AUTH_MODE must be 'oauth' or 'token', got {mode!r}"
         )
 
+    transport = os.environ.get("HUBSPOT_TRANSPORT", "stdio").strip() or "stdio"
+    if transport not in ("stdio", "http"):
+        raise ConfigError(
+            f"HUBSPOT_TRANSPORT must be 'stdio' or 'http', got {transport!r}"
+        )
+
+    disabled_raw = os.environ.get("HUBSPOT_DISABLED_TOOLS", "").strip()
+    disabled_tools = tuple(_split_scopes(disabled_raw)) if disabled_raw else ()
+
     if mode == "token":
         if not access_token:
             raise ConfigError(
@@ -181,6 +194,10 @@ def load_settings() -> Settings:
             api_base_url=api_base_url,
             timeout=timeout,
             access_token=access_token,
+            host=os.environ.get("HUBSPOT_HOST", "0.0.0.0").strip() or "0.0.0.0",
+            port=_int_env("HUBSPOT_PORT", 8000),
+            transport=transport,
+            disabled_tools=disabled_tools,
         )
 
     # oauth mode
@@ -218,4 +235,6 @@ def load_settings() -> Settings:
         port=_int_env("HUBSPOT_PORT", 8000),
         forward_pkce=_bool_env("HUBSPOT_FORWARD_PKCE", False),
         require_consent=_bool_env("HUBSPOT_REQUIRE_CONSENT", True),
+        transport=transport,
+        disabled_tools=disabled_tools,
     )

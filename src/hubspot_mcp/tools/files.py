@@ -19,6 +19,8 @@ import httpx
 
 from ._base import ClientGetter, ToolError, api, upload
 
+MAX_DOWNLOAD_BYTES = 5 * 1024 * 1024  # cap so large files can't flood agent context
+
 # HubSpot file visibility values accepted by the Files API ``options.access``.
 _ACCESS_VALUES = {
     "PRIVATE",
@@ -208,6 +210,12 @@ def register(mcp, get_client: ClientGetter) -> None:
         """
 
         meta = await api(get_client, "GET", f"/files/v3/files/{file_id}")
+        size = meta.get("size") if isinstance(meta, dict) else None
+        if isinstance(size, (int, float)) and size > MAX_DOWNLOAD_BYTES:
+            raise ToolError(
+                f"file {file_id} is {size} bytes, over the {MAX_DOWNLOAD_BYTES}-byte "
+                "download cap; use hubspot_get_file_signed_url for the direct link"
+            )
         url = await _fetch_signed_url(get_client, file_id)
         # The signed URL is pre-authenticated (and on a CDN host), so fetch it
         # without the HubSpot bearer; follow the redirect to the storage blob.
