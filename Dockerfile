@@ -1,5 +1,5 @@
 # ---- build stage: produce a wheel from the source tree ----
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9 AS builder
 
 WORKDIR /build
 RUN pip install --no-cache-dir build
@@ -11,7 +11,7 @@ COPY src ./src
 RUN python -m build --wheel --outdir /dist
 
 # ---- runtime stage: install the wheel into a clean image ----
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9 AS runtime
 
 # Run as an unprivileged user.
 RUN useradd --create-home --uid 10001 app
